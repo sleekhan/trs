@@ -14,4 +14,3 @@ Build with buildDependents
 java -jar xxxxxx.jar
 ```
 
-3. Open http://localhost:8000 withe a web browser
