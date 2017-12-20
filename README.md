@@ -1,15 +1,17 @@
-# trs (Time Recording System) - Exercise 
+# TRS (Time Recording System) - Exercise 
 
 [ Reactive, Spring 5, Spring Boot 2.0, Scala, Mongodb ]
 
-This system is for traking in and out time.
+This system is for tracking in and out time.
 
 Build with buildDependents
 
 
-Start a trs server 
+1. Start MongoDB located in the same machine
+2. Start the trs server 
+
 ```
 java -jar xxxxxx.jar
 ```
 
-Open http://localhost:8000 withe a web browser
+3. Open http://localhost:8000 withe a web browser
