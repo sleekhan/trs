@@ -6,4 +6,10 @@ This system is for traking in and out time.
 
 Build with buildDependents
 
+
+Start a trs server 
+```
 java -jar xxxxxx.jar
+```
+
+Open http://localhost:8000 withe a web browser
