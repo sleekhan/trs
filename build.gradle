@@ -1,5 +1,5 @@
 
-group 'com.hp'
+group 'net.ryan'
 version '1.0-SNAPSHOT'
 
 apply plugin: 'scala'
