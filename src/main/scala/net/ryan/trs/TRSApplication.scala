@@ -1,22 +1,25 @@
 package net.ryan.trs
 
 import org.joda.time._
-import org.springframework.boot.{SpringApplication}
+import org.springframework.boot.SpringApplication
 import org.springframework.boot.autoconfigure.SpringBootApplication
-import org.springframework.context.annotation.{Bean, Configuration}
+import org.springframework.context.annotation.{Bean, Configuration, Primary}
 import org.springframework.data.annotation.Id
 import org.springframework.data.mongodb.core.index.Indexed
 import org.springframework.data.mongodb.core.mapping.Document
 import org.springframework.data.mongodb.repository.Query
 import org.springframework.data.repository.reactive.ReactiveCrudRepository
 import org.springframework.http.{HttpStatus, MediaType}
-import org.springframework.stereotype.Service
+import org.springframework.stereotype.{Component, Service}
 import org.springframework.web.reactive.function.server.{ServerRequest, ServerResponse}
 import reactor.core.publisher.{Flux, Mono}
 import org.springframework.web.reactive.function.server.RouterFunctions._
 import org.springframework.web.reactive.function.BodyInserters.fromObject
 import org.springframework.web.reactive.function.server.RequestPredicates._
-
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
+import org.springframework.web.reactive.config.{CorsRegistry, EnableWebFlux, WebFluxConfigurer, WebFluxConfigurerComposite}
+import org.springframework.web.server.WebFilter
 
 import scala.beans.BeanProperty
 
@@ -30,6 +33,67 @@ object TRSApplication extends App {
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// OAuth2
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//@EnableAuthorizationServer
+//@Configuration
+//trait AuthServerOauth2Config extends AuthorizationServerConfigurerAdapter {
+//
+//
+//	@Autowired
+//	@Qualifier("authenticationManagerBean")
+//	val authenticationManager: AuthenticationManager
+//
+//	val tokenStore: TokenStore = new InMemoryTokenStore
+//
+//	override def configure(oauthServer: AuthorizationServerSecurityConfigurer) = {
+//    oauthServer.tokenKeyAccess("permitAll()").checkTokenAccess("isAuthenticated()")
+//
+//  }
+//  override def configure(endpoints: AuthorizationServerEndpointsConfigurer) = {
+//    endpoints.tokenStore(this.tokenStore)
+//      .authenticationManager(this.authenticationManager)
+////      .userd
+//
+//	}
+//
+//  override def configure(clients: ClientDetailsServiceConfigurer) = {
+//
+//  }
+//
+//  @Bean
+//  @Primary
+//  def tokenServices(): DefaultTokenServices = {
+//    val tokenServices = new DefaultTokenServices;
+//    tokenServices.setSupportRefreshToken(true)
+//    tokenServices.setTokenStore(this.tokenStore)
+//    return tokenServices;
+//  }
+//
+//}
+//
+//@Configuration
+//trait ServerSecurityConfig extends WebSecurityConfigurerAdapter {
+//
+//  override def configure(auth: AuthenticationManagerBuilder) = {
+//    auth.inMemoryAuthentication().withUser("john").password("123").roles("USER")
+//  }
+//
+//  @Bean
+//  override def authenticationManagerBean(): AuthenticationManager = {
+//    return super.authenticationManagerBean()
+//  }
+//
+//  override def configure(http: HttpSecurity) = {
+//    http.csrf().disable()
+//        .authorizeRequests()
+//        .anyRequest().authenticated()
+//        .and()
+//        .formLogin().permitAll()
+//  }
+//}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Time Record Services
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -40,12 +104,30 @@ class TRRouteConfiguration(trService: TRService) {
 	def routesTr() =
 		route(POST("/trservice/v1/tr/{idcard}"), req => trService.createOrUpdateTimeRecord(req))
 			.andRoute(POST("/trservice/v1/tr"), req => trService.getTimeRecords(req))
+			.andRoute(OPTIONS("/trservice/v1/tr"), req =>
+				ServerResponse.ok
+					.header("Access-Control-Allow-Origin", "*")
+					.header("Access-Control-Allow-Headers", "Content-Type")
+					.header("Access-Control-Allow-Methods", "POST, GET")
+					.build()
+			)
 }
+
+@Configuration
+class WebConfig extends WebFluxConfigurer {
+	override def addCorsMappings(registry: CorsRegistry): Unit = {
+		registry.addMapping("/trservice/v1/tr")
+			.allowedOrigins("*")
+  		.allowedMethods("PUT", "GET", "POST", "OPTIONS")
+  		.allowCredentials(false)
+		super.addCorsMappings(registry)
+	}
+}
+
+
 
 @Service
 class TRService(trRepository: TRRepository, userRepository: UserRepository) {
-
-	import mail._
 
 	val endDay = stringToDateTime("9999-09-09")
 
@@ -186,74 +268,4 @@ trait UserRepository extends ReactiveCrudRepository[User, String] {
 		findByEmail(newUser.email).defaultIfEmpty(newUser).map(existUser =>
 			if (existUser.id != null) User(existUser.id, newUser.email, newUser.idcard, newUser.name) else newUser
 		)).flatMap(u => save(u.asInstanceOf[User]))
-}
-
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Mail
-//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-package object mail {
-
-	implicit def stringToSeq(single: String): Seq[String] = Seq(single)
-
-	implicit def liftToOption[T](t: T): Option[T] = Some(t)
-
-	sealed abstract class MailType
-
-	case object Plain extends MailType
-
-	case object Rich extends MailType
-
-	case object MultiPart extends MailType
-
-	case class Mail(
-									 from: (String, String), // (email -> name)
-									 to: Seq[String],
-									 cc: Seq[String] = Seq.empty,
-									 bcc: Seq[String] = Seq.empty,
-									 subject: String,
-									 message: String,
-									 richMessage: Option[String] = None,
-									 attachment: Option[(java.io.File)] = None
-								 )
-
-	object send {
-		def a(mail: Mail) {
-			import org.apache.commons.mail._
-
-			val format =
-				if (mail.attachment.isDefined) MultiPart
-				else if (mail.richMessage.isDefined) Rich
-				else Plain
-
-			val commonsMail: Email = format match {
-				case Plain => new SimpleEmail().setMsg(mail.message)
-				case Rich => new HtmlEmail().setHtmlMsg(mail.richMessage.get).setTextMsg(mail.message)
-				case MultiPart => {
-					val attachment = new EmailAttachment()
-					attachment.setPath(mail.attachment.get.getAbsolutePath)
-					attachment.setDisposition(EmailAttachment.ATTACHMENT)
-					attachment.setName(mail.attachment.get.getName)
-					new MultiPartEmail().attach(attachment).setMsg(mail.message)
-				}
-			}
-
-			// TODO Set authentication from your configuration, sys properties or w/e
-
-			// Can't add these via fluent API because it produces exceptions
-			//       mail.to foreach (commonsMail.addTo(_))
-			//       mail.cc foreach (commonsMail.addCc(_))
-			//       mail.bcc foreach (commonsMail.addBcc(_))
-
-			commonsMail.setHostName("localhost")
-			commonsMail.setSmtpPort(25)
-			commonsMail.setAuthenticator(new DefaultAuthenticator("noreply@trs.mail.net", "%hsi6658"))
-
-
-			commonsMail.
-				setFrom(mail.from._1, mail.from._2).setSubject(mail.subject).addTo(mail.to.mkString).send()
-		}
-	}
-
 }
